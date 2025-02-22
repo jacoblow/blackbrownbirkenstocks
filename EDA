@@ -1,0 +1,28 @@
+import googlemaps
+import folium
+
+api_key = "AIzaSyD5JsKp2OEBAEMimT_15XxJZemX3Pd1ttU"
+
+gmaps = googlemaps.Client(key=api_key)
+origin = "Golden Gate Bridge, San Francisco, CA"
+destination = "Ferry Building, San Francisco, CA"
+
+directions_result = gmaps.directions(origin, destination, mode="walking")
+
+route = directions_result[0]['legs'][0]['steps']
+
+sf_map = folium.Map(location=[37.7749, -122.4194], zoom_start=13)
+
+for step in route:
+    start_loc = step['start_location']
+    end_loc = step['end_location']
+    
+    folium.Marker([start_loc['lat'], start_loc['lng']], popup="Start").add_to(sf_map)
+    folium.Marker([end_loc['lat'], end_loc['lng']], popup="End").add_to(sf_map)
+    folium.PolyLine([(start_loc['lat'], start_loc['lng']), (end_loc['lat'], end_loc['lng'])], color="blue").add_to(sf_map)
+
+# Save map
+sf_map.save("sf_route.html")
+
+print("Map saved as sf_route.html. Open it in a browser.")
+
