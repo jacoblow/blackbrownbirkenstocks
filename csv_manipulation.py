@@ -89,7 +89,7 @@ def district_risk(dsv):
     if polar_diff == 0:
         return {district: 0 for district in dsv}
 
-    alpha = 1.5
+    alpha = 1.1
     power_curved_vec = {
         district: np.power(((score - pmin) / polar_diff), alpha)
         for district, score in dsv.items()}
