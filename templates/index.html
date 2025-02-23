@@ -4,86 +4,258 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Safe Route Finder</title>
+
+    <!-- Load Google Maps API -->
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCT5n2x3EIJh-fBw9GbuMWWKKj3PKClDgo&libraries=places"></script>
+
     <style>
         body {
             font-family: Arial, sans-serif;
-            background: linear-gradient(to right, #6dd5ed, #2193b0);
-            color: white;
-            text-align: center;
-            padding: 50px;
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            overflow: hidden;
         }
 
-        h2 {
-            font-size: 28px;
-            margin-bottom: 20px;
+        #map {
+            width: 100%;
+            height: 100vh;
         }
 
-        .form-container {
-            background: rgba(255, 255, 255, 0.2);
-            padding: 20px;
-            border-radius: 10px;
-            display: inline-block;
+        /* Floating search box */
+        .search-container {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 15px;
+            border-radius: 8px;
             box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.2);
-            backdrop-filter: blur(5px);
+            display: flex;
+            flex-direction: column;
+            z-index: 1000;
         }
 
-        label {
-            font-size: 16px;
-            font-weight: bold;
-            display: block;
-            margin: 10px 0 5px;
+        /* Floating legend */
+        .legend-container {
+            position: absolute;
+            bottom: 15px;
+            right: 15px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.2);
+            font-size: 14px;
+            z-index: 1000;
+            max-width: 200px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+
+        .legend-color {
+            width: 20px;
+            height: 10px;
+            margin-right: 10px;
+            border-radius: 2px;
         }
 
         input {
-            width: 100%;
             padding: 10px;
-            border: none;
+            margin-bottom: 10px;
+            border: 1px solid #ccc;
             border-radius: 5px;
-            margin-bottom: 15px;
-            font-size: 16px;
+            font-size: 14px;
+            width: 200px;
         }
 
         button {
             background-color: #ff6f61;
             color: white;
             border: none;
-            padding: 12px 20px;
+            padding: 10px;
             border-radius: 5px;
-            font-size: 18px;
             cursor: pointer;
-            transition: background 0.3s ease-in-out;
         }
 
         button:hover {
             background-color: #e55b50;
         }
-
-        @media (max-width: 600px) {
-            body {
-                padding: 20px;
-            }
-
-            .form-container {
-                width: 100%;
-            }
-        }
     </style>
 </head>
 <body>
 
-    <h2>🚶 Safe Route Finder</h2>
+    <!-- Google Maps Container -->
+    <div id="map"></div>
 
-    <div class="form-container">
-        <form action="/multiple_routes" method="post">
-            <label for="origin">📍 Start Location:</label>
-            <input type="text" id="origin" name="origin" placeholder="Enter your starting point..." required>
-
-            <label for="destination">🏁 Destination:</label>
-            <input type="text" id="destination" name="destination" placeholder="Enter your destination..." required>
-
-            <button type="submit">🔍 Find Safe Routes</button>
-        </form>
+    <!-- Floating Search Box -->
+    <div class="search-container">
+        <h3>Find a Safe Route</h3>
+        <input type="text" id="origin" placeholder="📍 Start Location">
+        <input type="text" id="destination" placeholder="🏁 Destination">
+        <button onclick="getRoutes()">🔍 Find Safe Routes</button>
     </div>
+
+    <!-- Floating Legend for Route Colors & Scores -->
+    <div class="legend-container" id="legend">
+        <h4>Route Safety Legend</h4>
+        <div id="legend-content">
+            <p>No routes loaded yet.</p>
+        </div>
+    </div>
+
+    <script>
+        let map;
+        let markers = {};  // Store markers by type (origin/destination)
+        let polylines = []; // Store polyline objects
+
+        function initMap() {
+            // Default map center (San Francisco)
+            map = new google.maps.Map(document.getElementById("map"), {
+                zoom: 13,
+                center: { lat: 37.7749, lng: -122.4194 },
+            });
+
+            // Enable autocomplete for input fields
+            let originInput = document.getElementById("origin");
+            let destinationInput = document.getElementById("destination");
+
+            let originAutocomplete = new google.maps.places.Autocomplete(originInput);
+            let destinationAutocomplete = new google.maps.places.Autocomplete(destinationInput);
+
+            originAutocomplete.addListener("place_changed", function () {
+                let place = originAutocomplete.getPlace();
+                if (place.geometry) {
+                    addMarker(place.geometry.location, "origin");
+                }
+            });
+
+            destinationAutocomplete.addListener("place_changed", function () {
+                let place = destinationAutocomplete.getPlace();
+                if (place.geometry) {
+                    addMarker(place.geometry.location, "destination");
+                }
+            });
+
+            // Fetch and display stored routes dynamically
+            fetchRoutes();
+        }
+
+        function addMarker(location, type) {
+            // Remove existing marker of the same type
+            if (markers[type]) {
+                markers[type].setMap(null);
+            }
+
+            // Add new marker
+            let marker = new google.maps.Marker({
+                position: location,
+                map: map,
+                animation: google.maps.Animation.DROP,
+            });
+
+            // Store the marker in the dictionary
+            markers[type] = marker;
+
+            // Adjust map view
+            map.panTo(location);
+        }
+
+        function getRoutes() {
+            let origin = document.getElementById("origin").value;
+            let destination = document.getElementById("destination").value;
+
+            if (!origin || !destination) {
+                alert("Please enter both origin and destination.");
+                return;
+            }
+
+            // Clear existing routes before adding new ones
+            clearPolylines();
+
+            fetch(`/multiple_routes?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.routes.length > 0) {
+                        updateLegend(data.routes);
+
+                        data.routes.forEach(route => {
+                            let polyline = new google.maps.Polyline({
+                                path: route.coordinates.map(coord => ({
+                                    lat: coord[0],
+                                    lng: coord[1]
+                                })),
+                                strokeColor: route.is_safest ? "green" : "red",
+                                strokeWeight: route.is_safest ? 6 : 4,
+                                map: map
+                            });
+
+                            polylines.push(polyline);
+                        });
+
+                        // Center map on the start point of the first route
+                        let firstRouteStart = data.routes[0].coordinates[0];
+                        map.setCenter({ lat: firstRouteStart[0], lng: firstRouteStart[1] });
+                        map.setZoom(14);
+                    }
+                })
+                .catch(error => console.error("Error fetching routes:", error));
+        }
+
+        function fetchRoutes() {
+            fetch("/api/get_routes")
+                .then(response => response.json())
+                .then(data => {
+                    if (data.routes.length > 0) {
+                        clearPolylines();
+                        updateLegend(data.routes);
+
+                        data.routes.forEach(route => {
+                            let polyline = new google.maps.Polyline({
+                                path: route.coordinates.map(coord => ({
+                                    lat: coord[0],
+                                    lng: coord[1]
+                                })),
+                                strokeColor: route.is_safest ? "green" : "red",
+                                strokeWeight: 4,
+                                map: map
+                            });
+
+                            polylines.push(polyline);
+                        });
+                    }
+                })
+                .catch(error => console.error("Error fetching routes:", error));
+        }
+
+        function clearPolylines() {
+            polylines.forEach(polyline => polyline.setMap(null));
+            polylines = [];
+        }
+
+        function updateLegend(routes) {
+            let legendContent = document.getElementById("legend-content");
+            legendContent.innerHTML = "";
+
+            routes.forEach((route, index) => {
+                let color = route.is_safest ? "green" : "red";
+                let crimeScore = route.risk_score !== undefined ? route.risk_score.toFixed(2) : "N/A"; // Fix for undefined risk_score
+
+                let legendItem = document.createElement("div");
+                legendItem.classList.add("legend-item");
+                legendItem.innerHTML = `
+                    <div class="legend-color" style="background: ${color}"></div>
+                    Route ${index + 1}: ${crimeScore}
+                `;
+                legendContent.appendChild(legendItem);
+            });
+        }
+
+        window.onload = initMap;
+    </script>
 
 </body>
 </html>

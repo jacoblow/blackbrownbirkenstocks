@@ -21,6 +21,26 @@ def home():
 
 from datetime import datetime, timedelta
 
+@app.route("/api/get_routes", methods=["GET"])
+def get_routes():
+    """
+    API to send stored walking routes to the frontend dynamically.
+    """
+    all_routes = session.get("all_routes", [])
+
+    route_data = []
+    if all_routes:
+        safest_route = min(session.get("route_scores", []), key=lambda x: x["total_risk_score"])["route_index"]
+
+        for route in all_routes:
+            route_data.append({
+                "route_index": route["route_index"],
+                "coordinates": route["coordinates"],
+                "is_safest": route["route_index"] == safest_route
+            })
+
+    return jsonify({"routes": route_data})
+
 @app.route("/safety_map", methods=["GET"])
 def safety_map():
 
@@ -221,21 +241,19 @@ def filter_crimes_by_route(crime_df, route_coordinates, lat_range=0.0002326, lng
 
 
 
-@app.route("/multiple_routes", methods=["POST"])
+@app.route("/multiple_routes", methods=["GET", "POST"])
 def get_multiple_routes():
     """
-    Fetches multiple alternative walking routes and decodes their detailed coordinates.
-    Computes a weighted risk score for each route based on nearby crimes.
-    Stores data in session so it can be accessed by /safety_map.
+    Fetches multiple alternative walking routes, evaluates risk based on crime data,
+    and returns them as JSON.
     """
-    origin = request.form.get("origin")
-    destination = request.form.get("destination")
+    origin = request.args.get("origin")
+    destination = request.args.get("destination")
 
     if not origin or not destination:
         return jsonify({"error": "Missing origin or destination"}), 400
 
-
-    # Request Google Maps Directions API with waypoints
+    # Call Google Maps API to get routes
     url = f"https://maps.googleapis.com/maps/api/directions/json?origin={origin}&destination={destination}&mode=walking&alternatives=true&key={GOOGLE_MAPS_API_KEY}"
     
     response = requests.get(url, timeout=10)
@@ -254,10 +272,7 @@ def get_multiple_routes():
         return jsonify({"error": "Crime dataset not found"}), 500
 
     all_routes = []
-    route_crime_data = []
     route_scores = []
-
-    all_route_coordinates = []
 
     for idx, route in enumerate(data["routes"]):
         route_coordinates = []
@@ -267,11 +282,16 @@ def get_multiple_routes():
                 step_polyline = step["polyline"]["points"]
                 step_points = polyline.decode(step_polyline)
 
-                sampled_points = step_points[::3]  # Sample every 3rd point
-                
+                # Sample every 3rd point to reduce computation load
+                sampled_points = step_points[::3]
                 for lat, lng in sampled_points:
                     route_coordinates.append((lat, lng))
-                    all_route_coordinates.append((lat, lng))
+
+        # Filter crimes along this route
+        filtered_crimes = filter_crimes_by_route(crime_data, route_coordinates)
+
+        # Compute total risk score
+        total_risk_score = filtered_crimes["Exponential_Score"].sum() if not filtered_crimes.empty else 0
 
         # Store route details
         all_routes.append({
@@ -282,67 +302,28 @@ def get_multiple_routes():
             "coordinates": route_coordinates
         })
 
-        # Filter crimes along this route
-        filtered_crimes = filter_crimes_by_route(crime_data, route_coordinates)
+        route_scores.append({
+            "route_index": idx + 1,
+            "total_risk_score": total_risk_score
+        })
 
-        # Compute weighted crime score for this route
-        total_exponential_score = filtered_crimes["Exponential_Score"].sum()
-        # total_crimes = len(filtered_crimes)
+    # Identify the safest route (route with the lowest risk score)
+    if route_scores:
+        safest_route_index = min(route_scores, key=lambda x: x["total_risk_score"])["route_index"]
+    else:
+        safest_route_index = None  # Handle case where no scores are available
 
-        #weighted_route_score = total_exponential_score / np.log1p(total_crimes) if total_crimes > 0 else 0
-
-        route_scores.append({"route_index": idx + 1, "total_risk_score": round(total_exponential_score, 2)})
-
-        route_crime_data.append({"route_index": idx + 1, "crimes": filtered_crimes})
-
-    min_max_coords = find_min_max_coordinates(all_route_coordinates)
-
-    area_crimes = crime_data[
-            (crime_data["Latitude"].between(min_max_coords["min_latitude"] + 0.0002326, min_max_coords["max_latitude"] - 0.0002326)) &
-            (crime_data["Longitude"].between(min_max_coords["min_longitude"] + 0.0002818, min_max_coords["max_longitude"]) - 0.0002818)
-        ]
-
-    area_crime_score = area_crimes["Exponential_Score"].sum()
-
-    total_crime_score  = crime_data["Exponential_Score"].sum()
-
-    # Normalize the risk scores correctly
-    for route in route_scores:
-        total_risk_score = route["total_risk_score"]  # Extract numeric value
-
-        # Prevent division by zero
-        if area_crime_score == 0 or total_crime_score == 0:
-            normalized_score = 10  # Assign a default value if no crimes are found
-        else:
-            normalized_score = (
-                10 - ((1.5 * (total_risk_score / area_crime_score)) +
-                ((80*total_risk_score) / total_crime_score) +
-                2 * (area_crime_score / total_crime_score))
-            )
-
-        # Store the normalized score back into the dictionary
-        route["normalized_score"] = round(normalized_score, 2)
-
-    # Store results in session for later use
+    # Store results in session
     session["all_routes"] = all_routes
-    session["route_scores"] = route_scores  
+    session["route_scores"] = route_scores
+    session["safest_route"] = safest_route_index  # Store safest route index
 
-    # Convert crime tables for display (only showing the head)
-    crime_tables = {
-        route_data["route_index"]: route_data["crimes"].head(10).to_html(classes="table table-striped", index=False)
-        for route_data in route_crime_data
-    }
+    # Format response with is_safest flag
+    for route in all_routes:
+        route["is_safest"] = (route["route_index"] == safest_route_index)
+        route["risk_score"] = next((score["total_risk_score"] for score in route_scores if score["route_index"] == route["route_index"]), "N/A")
 
-    # Display risk scores
-    risk_scores_df = pd.DataFrame(route_scores)
-    risk_scores_html = risk_scores_df.to_html(classes="table table-striped", index=False)
-
-    return render_template(
-        "routes.html",
-        routes=all_routes,
-        crime_tables=crime_tables,
-        risk_scores_html=risk_scores_html
-    )
+    return jsonify({"routes": all_routes})
 
 
 if __name__ == "__main__":
