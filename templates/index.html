@@ -3,18 +3,87 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Route Finder</title>
+    <title>Safe Route Finder</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: linear-gradient(to right, #6dd5ed, #2193b0);
+            color: white;
+            text-align: center;
+            padding: 50px;
+        }
+
+        h2 {
+            font-size: 28px;
+            margin-bottom: 20px;
+        }
+
+        .form-container {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 20px;
+            border-radius: 10px;
+            display: inline-block;
+            box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.2);
+            backdrop-filter: blur(5px);
+        }
+
+        label {
+            font-size: 16px;
+            font-weight: bold;
+            display: block;
+            margin: 10px 0 5px;
+        }
+
+        input {
+            width: 100%;
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+            margin-bottom: 15px;
+            font-size: 16px;
+        }
+
+        button {
+            background-color: #ff6f61;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 5px;
+            font-size: 18px;
+            cursor: pointer;
+            transition: background 0.3s ease-in-out;
+        }
+
+        button:hover {
+            background-color: #e55b50;
+        }
+
+        @media (max-width: 600px) {
+            body {
+                padding: 20px;
+            }
+
+            .form-container {
+                width: 100%;
+            }
+        }
+    </style>
 </head>
 <body>
-    <h2>Find Your Walking Route</h2>
-    <form action="/multiple_routes" method="post">
-        <label for="origin">Enter Start Location:</label>
-        <input type="text" id="origin" name="origin" required>
-        <br><br>
-        <label for="destination">Enter Destination:</label>
-        <input type="text" id="destination" name="destination" required>
-        <br><br>
-        <button type="submit">Get Routes</button>
-    </form>
+
+    <h2>🚶 Safe Route Finder</h2>
+
+    <div class="form-container">
+        <form action="/multiple_routes" method="post">
+            <label for="origin">📍 Start Location:</label>
+            <input type="text" id="origin" name="origin" placeholder="Enter your starting point..." required>
+
+            <label for="destination">🏁 Destination:</label>
+            <input type="text" id="destination" name="destination" placeholder="Enter your destination..." required>
+
+            <button type="submit">🔍 Find Safe Routes</button>
+        </form>
+    </div>
+
 </body>
 </html>

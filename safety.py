@@ -19,8 +19,12 @@ def home():
     """ Renders the home page with an input form """
     return render_template("index.html")
 
+from datetime import datetime, timedelta
+
 @app.route("/safety_map", methods=["GET"])
 def safety_map():
+
+    # Retrieve stored routes and risk scores
     all_routes = session.get("all_routes", [])
     route_scores = session.get("route_scores", [])
 
@@ -34,15 +38,33 @@ def safety_map():
 
     print("Crime Data Columns:", crime_data.columns)  # Debugging step
 
+    # Determine the safest route
     safest_route = min(route_scores, key=lambda x: x["total_risk_score"])["route_index"]
 
+    # Center the map at the starting location
     map_center = all_routes[0]["coordinates"][0] if all_routes else (37.7749, -122.4194)  # Default to SF
     route_map = folium.Map(location=map_center, zoom_start=14)
 
-    # Add routes to the map
+    # Add walking routes to the map
     for route in all_routes:
         color = "green" if route["route_index"] == safest_route else "red"
-        folium.PolyLine(route["coordinates"], color=color, weight=5, opacity=0.7).add_to(route_map)
+        folium.PolyLine(route["coordinates"], color=color, weight=5, opacity=0.6).add_to(route_map)
+
+        # Add Start & End markers for each route
+        start_coords = route["coordinates"][0]
+        end_coords = route["coordinates"][-1]
+
+        folium.Marker(
+            location=start_coords,
+            icon=folium.Icon(color="blue", icon="play"),
+            popup="Start Point"
+        ).add_to(route_map)
+
+        folium.Marker(
+            location=end_coords,
+            icon=folium.Icon(color="darkblue", icon="flag"),
+            popup="End Point"
+        ).add_to(route_map)
 
     # Get crimes near the route
     all_crime_data = pd.DataFrame()
@@ -50,43 +72,59 @@ def safety_map():
         route_crimes = filter_crimes_by_route(crime_data, route["coordinates"])
         all_crime_data = pd.concat([all_crime_data, route_crimes], ignore_index=True)
 
-    # Remove duplicates
+    # Remove duplicate crimes
     all_crime_data = all_crime_data.drop_duplicates()
 
-    # Add crime markers with color coding
-    for _, row in all_crime_data.iterrows():
+    # Convert Incident Datetime column to datetime object
+    all_crime_data["Incident Datetime"] = pd.to_datetime(all_crime_data["Incident Datetime"], errors="coerce")
+
+    # Define the time threshold for "past week"
+    one_week_ago = datetime.now() - timedelta(days=7)
+
+    # Filter crimes:
+    filtered_crimes = all_crime_data[
+        ((all_crime_data["Exponential_Score"] > 80) |  # Any crime with score > 80
+         ((all_crime_data["Exponential_Score"] > 55) & (all_crime_data["Incident Datetime"] >= one_week_ago)))  # Past week & above 55
+    ]
+
+    # Add crime markers with better visibility
+    for _, row in filtered_crimes.iterrows():
         crime_score = row["Exponential_Score"]
 
-        # Assign color based on severity
+        # Assign severity level & marker size
         if crime_score > 80:
             crime_color = "red"
-        elif crime_score > 60:
-            crime_color = "orange"
-        elif crime_score > 40:
+            size = 6
+        elif crime_score > 55 and row["Incident Datetime"] >= one_week_ago:
             crime_color = "yellow"
+            size = 6
         else:
-            continue  # Skip crimes below 40
+            continue  # Skip crimes not in the criteria
 
-        # Correct column names based on dataset
+        # Ensure all fields exist and are non-null
         crime_type = row["Incident Category"] if pd.notna(row["Incident Category"]) else "Unknown Crime"
         crime_desc = row["Incident Description"] if pd.notna(row["Incident Description"]) else "No Description"
-        crime_time = row["Incident Datetime"] if pd.notna(row["Incident Datetime"]) else "Unknown Time"
+        crime_time = row["Incident Datetime"].strftime("%Y-%m-%d %H:%M:%S") if pd.notna(row["Incident Datetime"]) else "Unknown Time"
 
-        # Add crime marker with popup info
+        # Tooltip: Show both Time & Description on hover
+        tooltip_text = f"{crime_desc} | {crime_time}"
+
+        # Add enhanced crime marker with reduced opacity for readability
         folium.CircleMarker(
             location=(row["Latitude"], row["Longitude"]),
-            radius=7,
+            radius=size,
             color="black",
             fill=True,
             fill_color=crime_color,
-            fill_opacity=0.9,
-            popup=f"""
+            fill_opacity=0.9,  # Reduced opacity for better map readability
+            popup=folium.Popup(f"""
                 <b>🚨 {crime_type}</b><br>
                 <b>Description:</b> {crime_desc}<br>
                 <b>Time:</b> {crime_time}<br>
                 <b>Score:</b> {crime_score}<br>
                 <b>Location:</b> ({row['Latitude']}, {row['Longitude']})
-            """
+            """, max_width=300),
+            tooltip=tooltip_text,
         ).add_to(route_map)
 
     # Save map to an HTML file
@@ -94,6 +132,8 @@ def safety_map():
     route_map.save(map_path)
 
     return render_template("safety_map.html")
+
+
 
 def calculate_weighted_route_score(filtered_crimes):
     """
@@ -217,6 +257,8 @@ def get_multiple_routes():
     route_crime_data = []
     route_scores = []
 
+    all_route_coordinates = []
+
     for idx, route in enumerate(data["routes"]):
         route_coordinates = []
 
@@ -229,6 +271,7 @@ def get_multiple_routes():
                 
                 for lat, lng in sampled_points:
                     route_coordinates.append((lat, lng))
+                    all_route_coordinates.append((lat, lng))
 
         # Store route details
         all_routes.append({
@@ -244,16 +287,41 @@ def get_multiple_routes():
 
         # Compute weighted crime score for this route
         total_exponential_score = filtered_crimes["Exponential_Score"].sum()
-        total_crimes = len(filtered_crimes)
+        # total_crimes = len(filtered_crimes)
 
-        if total_crimes > 0:
-            weighted_route_score = total_exponential_score / np.log1p(total_crimes)
-        else:
-            weighted_route_score = 0
+        #weighted_route_score = total_exponential_score / np.log1p(total_crimes) if total_crimes > 0 else 0
 
-        route_scores.append({"route_index": idx + 1, "total_risk_score": round(weighted_route_score, 2)})
+        route_scores.append({"route_index": idx + 1, "total_risk_score": round(total_exponential_score, 2)})
 
         route_crime_data.append({"route_index": idx + 1, "crimes": filtered_crimes})
+
+    min_max_coords = find_min_max_coordinates(all_route_coordinates)
+
+    area_crimes = crime_data[
+            (crime_data["Latitude"].between(min_max_coords["min_latitude"] + 0.0002326, min_max_coords["max_latitude"] - 0.0002326)) &
+            (crime_data["Longitude"].between(min_max_coords["min_longitude"] + 0.0002818, min_max_coords["max_longitude"]) - 0.0002818)
+        ]
+
+    area_crime_score = area_crimes["Exponential_Score"].sum()
+
+    total_crime_score  = crime_data["Exponential_Score"].sum()
+
+    # Normalize the risk scores correctly
+    for route in route_scores:
+        total_risk_score = route["total_risk_score"]  # Extract numeric value
+
+        # Prevent division by zero
+        if area_crime_score == 0 or total_crime_score == 0:
+            normalized_score = 10  # Assign a default value if no crimes are found
+        else:
+            normalized_score = (
+                10 - ((1.5 * (total_risk_score / area_crime_score)) +
+                ((80*total_risk_score) / total_crime_score) +
+                2 * (area_crime_score / total_crime_score))
+            )
+
+        # Store the normalized score back into the dictionary
+        route["normalized_score"] = round(normalized_score, 2)
 
     # Store results in session for later use
     session["all_routes"] = all_routes

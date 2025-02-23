@@ -9,7 +9,7 @@ import os
 api_url = api_url = "https://data.sfgov.org/resource/wg3w-h783.csv?$limit=1000&$order=Incident_Datetime%20desc"
 new_data = pd.read_csv(api_url)
 
-local_file = "~/Desktop/shortenedSFcrimedata2_modified.csv"
+local_file = "shortenedSFcrimedata2_modified.csv"
 local_file = os.path.expanduser(local_file)
 
 if os.path.exists(local_file):
