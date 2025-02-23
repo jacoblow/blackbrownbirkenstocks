@@ -1,0 +1,33 @@
+import pandas as pd
+import folium
+
+# Predictive Modeling + Forecasting
+
+file_path = "~/Desktop/shortenedSFcrimedata2_modified.csv"
+df = pd.read_csv(file_path)
+df = df.dropna()
+
+#Converting Data Types: Datetime Objects
+df['Incident Datetime'] = pd.to_datetime(df['Incident Datetime'], errors='coerce')
+
+
+
+sf_coords = [37.7749, -122.4194]
+sf_map = folium.Map(location=sf_coords, zoom_start=12)
+
+
+for idx, row in df.iterrows():
+    # Assuming your dataframe has columns "Latitude" and "Longitude"
+    folium.CircleMarker(
+        location=[row['Latitude'], row['Longitude']],
+        radius=3,
+        color='red',
+        fill=True,
+        fill_opacity=0.6,
+    ).add_to(sf_map)
+
+sf_map.save("crime_map.html")
+
+df['Hour'] = df['Incident Datetime'].dt.hour
+df['Weekday'] = df['Incident Datetime'].dt.weekday
+print(df.groupby('Weekday').size())
