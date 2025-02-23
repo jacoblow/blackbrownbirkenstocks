@@ -73,7 +73,7 @@ def district_sum(dataframe):
     return districts_over_city
 
 
-print(sum(district_sum(df).values()))
+df = df.sort_values(by=df.columns[0], ascending=False)
 
 
 output_file_path = "~/Desktop/shortenedSFcrimedata2_modified.csv"
