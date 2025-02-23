@@ -56,9 +56,7 @@ df["Incident_Weight"] = df["Incident Category"].map(weights)
 df["Incident Datetime"] = pd.to_datetime(df["Incident Datetime"], errors='coerce')
 
 
-def district_sum(dataframe):
-    districts_crime_rates = dataframe.groupby("Police District")["Exponential_Score"].sum()
-    return districts_crime_rates
+
 
 
 current_date = datetime.now()
@@ -67,6 +65,16 @@ emvec = []
 
 df["Exponential_Score"] = df["Incident_Weight"] * np.exp((-1) * gamma * (current_date - df["Incident Datetime"]).dt.days)
 df = df.iloc[:, :37]
+
+def district_sum(dataframe):
+    districts_crime_rates = dataframe.groupby("Police District")["Exponential_Score"].sum()
+    city_crime_rate = districts_crime_rates.sum()
+    districts_over_city = {district: rate / city_crime_rate for district, rate in districts_crime_rates.items()}
+    return districts_over_city
+
+
+print(sum(district_sum(df).values()))
+
 
 output_file_path = "~/Desktop/shortenedSFcrimedata2_modified.csv"
 df.to_csv(output_file_path, index=False)
