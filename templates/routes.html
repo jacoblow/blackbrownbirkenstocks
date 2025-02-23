@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Route Results</title>
+</head>
+<body>
+    <h2>Route Results</h2>
+
+    {% for route in routes %}
+        <h3>Route {{ route.route_index }}: {{ route.summary }}</h3>
+        <p>Distance: {{ route.distance }}</p>
+        <p>Duration: {{ route.duration }}</p>
+        <h4>Coordinates:</h4>
+        <ul>
+            {% for coord in route.coordinates %}
+                <li>{{ coord }}</li>
+            {% endfor %}
+        </ul>
+        <hr>
+    {% endfor %}
+
+    <a href="/">Find Another Route</a>
+</body>
+</html>
