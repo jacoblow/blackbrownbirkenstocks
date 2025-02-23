@@ -1,28 +1,48 @@
 import googlemaps
 import folium
+import pandas as pd
+import numpy as np
+from datetime import datetime
 
-api_key = "AIzaSyD5JsKp2OEBAEMimT_15XxJZemX3Pd1ttU"
 
-gmaps = googlemaps.Client(key=api_key)
-origin = "Golden Gate Bridge, San Francisco, CA"
-destination = "Ferry Building, San Francisco, CA"
 
-directions_result = gmaps.directions(origin, destination, mode="walking")
+file_path = "~/Desktop/shortenedSFcrimedata2.csv"
+df = pd.read_csv(file_path)
+weights = {
+    "Arson": 40,
+    "Assault": 90,
+    "Disorderly Conduct": 10,
+    "Drug Offense": 65,
+    "Drug Violation": 65,
+    "Homicide": 100,
+    "Human Trafficking, Commercial Sex Acts": 70,
+    "Larceny Theft": 40,
+    "Liquor Laws": 25,
+    "Motor Vehicle Theft": 50,
+    "Prostitution": 60,
+    "Rape": 92,
+    "Robbery": 90,
+    "Sex Offense": 75,
+    "Suspicious": 8,
+    "Suspicious Occ": 8,
+    "Traffic Collision": 20,
+    "Traffic Violation Arrest": 30,
+    "Weapons Carrying Etc": 90,
+    "Weapons Offense": 90
+}
 
-route = directions_result[0]['legs'][0]['steps']
+df["Incident_Weight"] = df["Incident Category"].map(weights)
 
-sf_map = folium.Map(location=[37.7749, -122.4194], zoom_start=13)
+df["Incident Datetime"] = pd.to_datetime(df["Incident Datetime"], errors='coerce')
 
-for step in route:
-    start_loc = step['start_location']
-    end_loc = step['end_location']
-    
-    folium.Marker([start_loc['lat'], start_loc['lng']], popup="Start").add_to(sf_map)
-    folium.Marker([end_loc['lat'], end_loc['lng']], popup="End").add_to(sf_map)
-    folium.PolyLine([(start_loc['lat'], start_loc['lng']), (end_loc['lat'], end_loc['lng'])], color="blue").add_to(sf_map)
 
-# Save map
-sf_map.save("sf_route.html")
+current_date = datetime.now()
+gamma = 0.01
+emvec = []
 
-print("Map saved as sf_route.html. Open it in a browser.")
+df["Exponential_Score"] = df["Incident_Weight"] * np.exp((-1) * gamma * (current_date - df["Incident Datetime"]).dt.days)
 
+print(df["Exponential_Score"])
+
+output_file_path = "~/Desktop/shortenedSFcrimedata2_modified.csv"
+df.to_csv(output_file_path, index=False)
