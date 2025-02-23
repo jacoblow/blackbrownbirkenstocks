@@ -4,23 +4,35 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Route Results</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
 </head>
 <body>
-    <h2>Route Results</h2>
+    <div class="container">
+        <h2>Route Results</h2>
 
-    {% for route in routes %}
-        <h3>Route {{ route.route_index }}: {{ route.summary }}</h3>
-        <p>Distance: {{ route.distance }}</p>
-        <p>Duration: {{ route.duration }}</p>
-        <h4>Coordinates:</h4>
-        <ul>
-            {% for coord in route.coordinates %}
-                <li>{{ coord }}</li>
-            {% endfor %}
-        </ul>
-        <hr>
-    {% endfor %}
+        {% for route in routes %}
+            <h3>Route {{ route.route_index }}: {{ route.summary }}</h3>
+            <p><strong>Distance:</strong> {{ route.distance }}</p>
+            <p><strong>Duration:</strong> {{ route.duration }}</p>
+            <h4>Coordinates:</h4>
+            <ul>
+                {% for coord in route.coordinates %}
+                    <li>{{ coord }}</li>
+                {% endfor %}
+            </ul>
+            <h3>Crimes Along This Route</h3>
+            {% if crime_tables[route.route_index] %}
+                {{ crime_tables[route.route_index] | safe }}
+            {% else %}
+                <p>No crimes found along this route.</p>
+            {% endif %}
+            <hr>
+        {% endfor %}
 
-    <a href="/">Find Another Route</a>
+        <h3>Route Safety Comparison</h3>
+        {{ risk_scores_html | safe }}
+
+        <a href="/" class="btn btn-primary mt-3">Find Another Route</a>
+    </div>
 </body>
 </html>
