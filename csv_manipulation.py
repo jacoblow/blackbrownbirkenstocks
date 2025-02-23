@@ -60,9 +60,7 @@ def district_sum(dataframe):
     districts_crime_rates = dataframe.groupby("Police District")["Exponential_Score"].sum()
     return districts_crime_rates
 
-district_sum(df)
 
-print(district_sum(df)[1])
 current_date = datetime.now()
 gamma = 0.001
 emvec = []
