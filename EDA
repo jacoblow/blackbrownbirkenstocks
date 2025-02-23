@@ -28,7 +28,8 @@ weights = {
     "Traffic Collision": 20,
     "Traffic Violation Arrest": 30,
     "Weapons Carrying Etc": 90,
-    "Weapons Offense": 90
+    "Weapons Offense": 90,
+    "Stolen Property": 30
 }
 
 df["Incident_Weight"] = df["Incident Category"].map(weights)
@@ -37,7 +38,7 @@ df["Incident Datetime"] = pd.to_datetime(df["Incident Datetime"], errors='coerce
 
 
 current_date = datetime.now()
-gamma = 0.01
+gamma = 0.001
 emvec = []
 
 df["Exponential_Score"] = df["Incident_Weight"] * np.exp((-1) * gamma * (current_date - df["Incident Datetime"]).dt.days)
@@ -46,3 +47,7 @@ print(df["Exponential_Score"])
 
 output_file_path = "~/Desktop/shortenedSFcrimedata2_modified.csv"
 df.to_csv(output_file_path, index=False)
+
+
+
+
