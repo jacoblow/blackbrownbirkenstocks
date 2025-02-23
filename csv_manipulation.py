@@ -28,27 +28,27 @@ else:
 
 
 weights = {
-    "Arson": 40,
-    "Assault": 90,
-    "Disorderly Conduct": 10,
-    "Drug Offense": 65,
-    "Drug Violation": 65,
+    "Arson": 70,
+    "Assault": 85,
+    "Disorderly Conduct": 20,
+    "Drug Offense": 55,
+    "Drug Violation": 55,
     "Homicide": 100,
-    "Human Trafficking, Commercial Sex Acts": 70,
-    "Larceny Theft": 40,
-    "Liquor Laws": 25,
-    "Motor Vehicle Theft": 50,
-    "Prostitution": 60,
-    "Rape": 92,
+    "Human Trafficking, Commercial Sex Acts": 95,
+    "Larceny Theft": 50,
+    "Liquor Laws": 30,
+    "Motor Vehicle Theft": 60,
+    "Prostitution": 40,
+    "Rape": 98,
     "Robbery": 90,
-    "Sex Offense": 75,
-    "Suspicious": 8,
-    "Suspicious Occ": 8,
-    "Traffic Collision": 20,
-    "Traffic Violation Arrest": 30,
-    "Weapons Carrying Etc": 90,
+    "Sex Offense": 88,
+    "Suspicious": 10,
+    "Suspicious Occ": 10,
+    "Traffic Collision": 35,
+    "Traffic Violation Arrest": 25,
+    "Weapons Carrying Etc": 85,
     "Weapons Offense": 90,
-    "Stolen Property": 30
+    "Stolen Property": 45
 }
 
 df["Incident_Weight"] = df["Incident Category"].map(weights)
