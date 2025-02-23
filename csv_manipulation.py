@@ -60,7 +60,7 @@ df["Incident Datetime"] = pd.to_datetime(df["Incident Datetime"], errors='coerce
 
 
 current_date = datetime.now()
-gamma = 0.001
+gamma = 0.01
 emvec = []
 
 df["Exponential_Score"] = df["Incident_Weight"] * np.exp((-1) * gamma * (current_date - df["Incident Datetime"]).dt.days)
