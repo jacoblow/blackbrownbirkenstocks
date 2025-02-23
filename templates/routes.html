@@ -3,36 +3,117 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Route Results</title>
+    <title>Safe Route Finder</title>
+
+    <!-- Bootstrap CSS for better styling -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <style>
+
+body {
+    background-color: #f8f9fa;
+}
+
+.container {
+    margin-top: 30px;
+}
+
+.card {
+    border-radius: 10px;
+    margin-bottom: 20px;
+}
+
+.table {
+    margin-bottom: 0;
+}
+
+.route-header {
+    font-size: 1.2rem;
+    font-weight: bold;
+    color: #ffffff;
+    padding: 10px;
+    border-radius: 5px;
+    text-align: center;
+}
+
+.safe-route {
+    background-color: #28a745; /* Green for safest */
+}
+
+.other-route {
+    background-color: #dc3545; /* Red for other routes */
+}
+
+.crime-table {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.risk-score {
+    font-size: 1.5rem;
+    font-weight: bold;
+    text-align: center;
+    padding: 10px;
+    border-radius: 5px;
+    color: white;
+}
+
+.low-risk {
+    background-color: #28a745; /* Green */
+}
+
+.medium-risk {
+    background-color: #ffc107; /* Yellow */
+}
+
+.high-risk {
+    background-color: #dc3545; /* Red */
+}
+</style>
 </head>
 <body>
-    <div class="container">
-        <h2>Route Results</h2>
 
-        {% for route in routes %}
-            <h3>Route {{ route.route_index }}: {{ route.summary }}</h3>
+<div class="container">
+<h1 class="text-center">🚦 Safe Route Finder</h1>
+<p class="text-center">Your generated routes and crime statistics.</p>
+
+<div class="row">
+<div class="col-md-12">
+    <h3 class="text-center">🔎 Route Risk Scores</h3>
+    {{ risk_scores_html | safe }}
+</div>
+</div>
+
+<hr>
+
+<div class="row">
+{% for route in routes %}
+<div class="col-md-6">
+    <div class="card">
+        <div class="card-header route-header {% if route.route_index == 1 %}safe-route{% else %}other-route{% endif %}">
+            Route {{ route.route_index }} - {{ route.summary }}
+        </div>
+        <div class="card-body">
             <p><strong>Distance:</strong> {{ route.distance }}</p>
             <p><strong>Duration:</strong> {{ route.duration }}</p>
-            <h4>Coordinates:</h4>
-            <ul>
-                {% for coord in route.coordinates %}
-                    <li>{{ coord }}</li>
-                {% endfor %}
-            </ul>
-            <h3>Crimes Along This Route</h3>
-            {% if crime_tables[route.route_index] %}
-                {{ crime_tables[route.route_index] | safe }}
-            {% else %}
-                <p>No crimes found along this route.</p>
-            {% endif %}
-            <hr>
-        {% endfor %}
-
-        <h3>Route Safety Comparison</h3>
-        {{ risk_scores_html | safe }}
-
-        <a href="/" class="btn btn-primary mt-3">Find Another Route</a>
+            
+            <div class="crime-table">
+                <h5>🚨 Crimes Along This Route</h5>
+                {% set crime_table = crime_tables.get(route.route_index) %}
+                {{ crime_table | safe if crime_table else "<p>No crimes found along this route.</p>" }}
+            </div>
+        </div>
     </div>
+</div>
+{% endfor %}
+</div>
+
+<div class="text-center mt-4">
+<a href="/safety_map" class="btn btn-primary btn-lg">📍 View on Map</a>
+</div>
+</div>
+
+<!-- Bootstrap JS (optional) -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
 </body>
 </html>
