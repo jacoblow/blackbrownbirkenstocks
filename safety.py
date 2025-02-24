@@ -265,10 +265,8 @@ def get_multiple_routes():
         response = requests.get(url, timeout=10)
         data = response.json()
 
-        if "error_message" in data:
-            return jsonify({"error": data["error_message"]}), 400
-
-        if not data.get("routes"):
+        # Check if 'routes' key exists and is not empty
+        if "routes" not in data or not data["routes"]:
             return jsonify({"error": "No pedestrian routes found"}), 400
 
         # Load crime dataset
@@ -277,20 +275,44 @@ def get_multiple_routes():
         except FileNotFoundError:
             return jsonify({"error": "Crime dataset not found"}), 500
 
-        # Load power curve dataset
-        try: 
-            power_data = pd.read_csv("power_curved_values.csv")
-        except FileNotFoundError:
-            return jsonify({"error": "Power curve dataset not found"}), 500
-
-        # Debugging: Print power_data columns
-        print("Columns in power_data:", power_data.columns.tolist())
-
         all_routes = []
+        all_crimes = []
         route_scores = []
-        min_crime_rate = float("inf")
-        max_crime_rate = float("-inf")
 
+        crime_severities = []
+
+        # First pass: Compute crime severity for each route
+        for route in data["routes"]:
+            route_coordinates = []
+
+            for leg in route["legs"]:
+                for step in leg["steps"]:
+                    step_polyline = step["polyline"]["points"]
+                    step_points = polyline.decode(step_polyline)
+
+                    for lat, lng in step_points[::3]:  # Sample every 3rd point
+                        route_coordinates.append((lat, lng))
+
+            if not route_coordinates:
+                continue
+
+            filtered_crimes = filter_crimes_by_route(crime_data, route_coordinates)
+            total_crime_severity = filtered_crimes["Exponential_Score"].sum()
+
+            route_distance = max(len(route_coordinates) * 0.1, 1)  # Ensure non-zero distance
+            crime_severity_per_mile = total_crime_severity / route_distance
+
+            crime_severities.append(crime_severity_per_mile)
+
+        # Min-max scaling for risk score (keep values more closely grouped)
+        min_severity = min(crime_severities) if crime_severities else 0
+        max_severity = max(crime_severities) if crime_severities else 1  # Avoid division by zero
+
+        # Avoid extreme scores (1 and 10) by narrowing the range
+        min_bound = 3  # Instead of 1, start from 3
+        max_bound = 8  # Instead of 10, cap at 8 for better spread
+
+        # Second pass: Assign risk scores
         for idx, route in enumerate(data["routes"]):
             route_coordinates = []
 
@@ -299,114 +321,73 @@ def get_multiple_routes():
                     step_polyline = step["polyline"]["points"]
                     step_points = polyline.decode(step_polyline)
 
-                    sampled_points = step_points[::3]
-                    for lat, lng in sampled_points:
+                    for lat, lng in step_points[::3]:
                         route_coordinates.append((lat, lng))
 
-            # Filter crimes along this route
-            filtered_crimes = filter_crimes_by_route(crime_data, route_coordinates)
-
-            # Extract distance properly
-            distance_text = route["legs"][0]["distance"]["text"]
-            distance_numeric = float("".join(filter(str.isdigit, distance_text)))  
-            distance_units = "miles" if "mile" in distance_text.lower() else "km"
-
-            if distance_units == "km":
-                distance_numeric *= 0.621371  
-
-            # Compute crime rate
-            route_crime_rate = filtered_crimes["Exponential_Score"].sum() / distance_numeric if distance_numeric > 0 else 0
-            min_crime_rate = min(min_crime_rate, route_crime_rate)
-            max_crime_rate = max(max_crime_rate, route_crime_rate)
-
-        # Normalize route crime rates and compute risk scores
-        for idx, route in enumerate(data["routes"]):
-            route_coordinates = []
-
-            for leg in route["legs"]:
-                for step in leg["steps"]:
-                    step_polyline = step["polyline"]["points"]
-                    step_points = polyline.decode(step_polyline)
-
-                    sampled_points = step_points[::3]
-                    for lat, lng in sampled_points:
-                        route_coordinates.append((lat, lng))
+            if not route_coordinates:
+                continue
 
             filtered_crimes = filter_crimes_by_route(crime_data, route_coordinates)
-            distance_text = route["legs"][0]["distance"]["text"]
-            distance_numeric = float("".join(filter(str.isdigit, distance_text)))  
-            distance_units = "miles" if "mile" in distance_text.lower() else "km"
+            total_crime_severity = filtered_crimes["Exponential_Score"].sum()
 
-            if distance_units == "km":
-                distance_numeric *= 0.621371  
+            route_distance = max(len(route_coordinates) * 0.1, 1)
+            crime_severity_per_mile = total_crime_severity / route_distance
 
-            route_crime_rate = filtered_crimes["Exponential_Score"].sum() / distance_numeric if distance_numeric > 0 else 0
-            norm_route_crime_rate = normalize_value(route_crime_rate, min_crime_rate, max_crime_rate)  
-
-            # District normalization
-            unique_districts = filtered_crimes["Police District"].dropna().unique()
-            norm_district_rate = 0
-
-            if "District" in power_data.columns:
-                for district in unique_districts:
-                    if district in power_data["District"].values:
-                        norm_district_rate += power_data.loc[power_data["District"] == district, "Score"].values[0]
+            # Normalize crime severity using min-max scaling
+            if max_severity > min_severity:
+                risk_score = max_bound - ((max_bound - min_bound) * (crime_severity_per_mile - min_severity) / (max_severity - min_severity))
             else:
-                print("ERROR: 'District' column missing in power_data.csv")
+                risk_score = max_bound  # If all values are the same, assign a middle score
 
-            norm_district_rate = np.log1p(norm_district_rate) / np.log1p(power_data["Score"].max())  # Normalize log-scaled
-            norm_total = (0.6 * norm_route_crime_rate) + (0.4 * norm_district_rate)  
+            risk_score = round(max(min_bound, min(max_bound, risk_score)), 2)  # Ensure within min_bound and max_bound
 
-            # Scale final score to 1-10 range
-            total_risk_score = 10 - (9 * norm_total)  
-            total_risk_score = max(1, min(10, total_risk_score))  
+            route_scores.append({
+                "route_index": idx + 1,
+                "total_risk_score": risk_score
+            })
 
-            # Update power_data with the latest district scores
-            for district in unique_districts:
-                if district in power_data["District"].values:
-                    power_data.loc[power_data["District"] == district, "Score"] = norm_district_rate
-                else:
-                    new_row = pd.DataFrame({"District": [district], "Score": [norm_district_rate]})
-                    power_data = pd.concat([power_data, new_row], ignore_index=True)
+            # Select the 5 worst crimes along the route (highest Exponential_Score)
+            top_crimes = filtered_crimes.nlargest(5, "Exponential_Score")
+            crime_list = []
+            for _, row in top_crimes.iterrows():
+                crime_list.append({
+                    "latitude": row["Latitude"],
+                    "longitude": row["Longitude"],
+                    "category": row["Incident Category"],
+                    "description": row["Incident Description"],
+                    "score": row["Exponential_Score"]
+                })
 
-            # Save the updated district crime scores back to the CSV
-            power_data.to_csv("power_curved_values.csv", index=False)
-            print("Updated power data written back to CSV.")
+            all_crimes.extend(crime_list)  # Collect all crimes along the routes
 
             all_routes.append({
                 "route_index": idx + 1,
                 "summary": route.get("summary", "No Summary"),
-                "distance": f"{distance_numeric:.2f} miles",
+                "distance": route["legs"][0]["distance"]["text"],
                 "duration": route["legs"][0]["duration"]["text"],
-                "coordinates": route_coordinates
+                "coordinates": route_coordinates,
+                "risk_score": risk_score  # Attach risk score to the route
             })
 
-            route_scores.append({
-                "route_index": idx + 1,
-                "total_risk_score": total_risk_score
-            })
+        # Determine safest route (highest risk score = safest)
+        safest_route_index = max(route_scores, key=lambda x: x["total_risk_score"])["route_index"]
 
-        # Determine safest route
-        if route_scores:
-            safest_route_index = max(route_scores, key=lambda x: x["total_risk_score"])["route_index"]
-        else:
-            safest_route_index = None
+        # Update all routes with `is_safest`
+        for route in all_routes:
+            route["is_safest"] = (route["route_index"] == safest_route_index)
 
-        # Store results in session
+        # Store in session
         session["all_routes"] = all_routes
         session["route_scores"] = route_scores
         session["safest_route"] = safest_route_index
 
-        for route in all_routes:
-            route["is_safest"] = (route["route_index"] == safest_route_index)
-            route["risk_score"] = next((score["total_risk_score"] for score in route_scores if score["route_index"] == route["route_index"]), "N/A")
-
-        return jsonify({"routes": all_routes})
+        return jsonify({"routes": all_routes, "crimes": all_crimes})
 
     except Exception as e:
         print("ERROR: ", str(e))
         print(traceback.format_exc())  
-        return jsonify({"error": "Internal Server Error"}), 500
+        return jsonify({"error": "Internal Server Error"}), 500  # ✅ Add except block here
+
 
 
 

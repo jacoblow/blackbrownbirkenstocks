@@ -111,15 +111,14 @@
         let map;
         let markers = {};  // Store markers by type (origin/destination)
         let polylines = []; // Store polyline objects
+        let crimeMarkers = []; // Store crime markers
 
         function initMap() {
-            // Default map center (San Francisco)
             map = new google.maps.Map(document.getElementById("map"), {
                 zoom: 13,
                 center: { lat: 37.7749, lng: -122.4194 },
             });
 
-            // Enable autocomplete for input fields
             let originInput = document.getElementById("origin");
             let destinationInput = document.getElementById("destination");
 
@@ -140,70 +139,72 @@
                 }
             });
 
-            // Fetch and display stored routes dynamically
             fetchRoutes();
         }
 
         function addMarker(location, type) {
-            // Remove existing marker of the same type
             if (markers[type]) {
                 markers[type].setMap(null);
             }
 
-            // Add new marker
             let marker = new google.maps.Marker({
                 position: location,
                 map: map,
                 animation: google.maps.Animation.DROP,
             });
 
-            // Store the marker in the dictionary
             markers[type] = marker;
-
-            // Adjust map view
             map.panTo(location);
         }
 
         function getRoutes() {
-            let origin = document.getElementById("origin").value;
-            let destination = document.getElementById("destination").value;
+    let origin = document.getElementById("origin").value;
+    let destination = document.getElementById("destination").value;
 
-            if (!origin || !destination) {
-                alert("Please enter both origin and destination.");
-                return;
+    if (!origin || !destination) {
+        alert("Please enter both origin and destination.");
+        return;
+    }
+
+    clearPolylines();
+    clearCrimeMarkers();
+
+    fetch(`/multiple_routes?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.routes.length > 0) {
+                updateLegend(data.routes);
+
+                let safestRouteIndex = data.routes.findIndex(route => route.is_safest);
+
+                data.routes.forEach((route, index) => {
+                    let color = index === safestRouteIndex ? "green" : "red";  // Fix the color logic
+
+                    let polyline = new google.maps.Polyline({
+                        path: route.coordinates.map(coord => ({
+                            lat: coord[0],
+                            lng: coord[1]
+                        })),
+                        strokeColor: color,
+                        strokeWeight: index === safestRouteIndex ? 6 : 4,
+                        map: map
+                    });
+
+                    polylines.push(polyline);
+                });
+
+                if (data.crimes) {
+                    addCrimeMarkers(data.crimes);
+                }
+
+                let firstRouteStart = data.routes[0].coordinates[0];
+                map.setCenter({ lat: firstRouteStart[0], lng: firstRouteStart[1] });
+                map.setZoom(14);
             }
+        })
+        .catch(error => console.error("Error fetching routes:", error));
+}
 
-            // Clear existing routes before adding new ones
-            clearPolylines();
-
-            fetch(`/multiple_routes?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}`)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.routes.length > 0) {
-                        updateLegend(data.routes);
-
-                        data.routes.forEach(route => {
-                            let polyline = new google.maps.Polyline({
-                                path: route.coordinates.map(coord => ({
-                                    lat: coord[0],
-                                    lng: coord[1]
-                                })),
-                                strokeColor: route.is_safest ? "green" : "red",
-                                strokeWeight: route.is_safest ? 6 : 4,
-                                map: map
-                            });
-
-                            polylines.push(polyline);
-                        });
-
-                        // Center map on the start point of the first route
-                        let firstRouteStart = data.routes[0].coordinates[0];
-                        map.setCenter({ lat: firstRouteStart[0], lng: firstRouteStart[1] });
-                        map.setZoom(14);
-                    }
-                })
-                .catch(error => console.error("Error fetching routes:", error));
-        }
 
         function fetchRoutes() {
             fetch("/api/get_routes")
@@ -236,23 +237,52 @@
             polylines = [];
         }
 
-        function updateLegend(routes) {
-            let legendContent = document.getElementById("legend-content");
-            legendContent.innerHTML = "";
+        function clearCrimeMarkers() {
+            crimeMarkers.forEach(marker => marker.setMap(null));
+            crimeMarkers = [];
+        }
 
-            routes.forEach((route, index) => {
-                let color = route.is_safest ? "green" : "red";
-                let crimeScore = route.risk_score !== undefined ? route.risk_score.toFixed(2) : "N/A"; // Fix for undefined risk_score
+        function addCrimeMarkers(crimes) {
+            crimes.forEach(crime => {
+                let crimeMarker = new google.maps.Marker({
+                    position: { lat: crime.latitude, lng: crime.longitude },
+                    map: map,
+                    icon: {
+                        url: "http://maps.google.com/mapfiles/ms/icons/red-dot.png",
+                        scaledSize: new google.maps.Size(30, 30)
+                    },
+                    title: `🚨 ${crime.category}`,
+                });
 
-                let legendItem = document.createElement("div");
-                legendItem.classList.add("legend-item");
-                legendItem.innerHTML = `
-                    <div class="legend-color" style="background: ${color}"></div>
-                    Route ${index + 1}: ${crimeScore}
-                `;
-                legendContent.appendChild(legendItem);
+                let infoWindow = new google.maps.InfoWindow({
+                    content: `<b>${crime.category}</b><br>${crime.description}<br>📍 ${crime.latitude}, ${crime.longitude}<br>⚠️ Score: ${crime.score}`,
+                });
+
+                crimeMarker.addListener("click", function () {
+                    infoWindow.open(map, crimeMarker);
+                });
+
+                crimeMarkers.push(crimeMarker);
             });
         }
+
+        function updateLegend(routes) {
+    let legendContent = document.getElementById("legend-content");
+    legendContent.innerHTML = "";
+
+    routes.forEach((route, index) => {
+        let color = route.is_safest ? "green" : "red";
+        let crimeScore = route.risk_score !== undefined ? route.risk_score.toFixed(2) : "N/A";
+
+        legendContent.innerHTML += `
+            <div class="legend-item">
+                <div class="legend-color" style="background: ${color}"></div>
+                Route ${index + 1}: ${crimeScore} ${route.is_safest ? "(Safest)" : ""}
+            </div>
+        `;
+    });
+}
+
 
         window.onload = initMap;
     </script>
