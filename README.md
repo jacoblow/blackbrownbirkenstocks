@@ -25,5 +25,5 @@ RoutesITrust combines real-world crime data with alternative walking routes (ret
 
 ## Note:
 
- - **The Google Map's API key will be invalid after the UCSB Datathon 2/23/2025.**
-   Please contact me to test out this project, or grab your free google maps api key from https://developers.google.com/maps/documentation/javascript/get-api-key.
+ - **The Google Map's API key will have low usage limits after the UCSB Datathon 2/23/2025.**
+  Please contact me to test out this project on a greater scale, or grab your free google maps api key from https://developers.google.com/maps/documentation/javascript/get-api-key.
