@@ -1,5 +1,4 @@
 from flask import Flask, request, jsonify, render_template, session
-from dotenv import load_dotenv
 import requests
 import os
 import polyline
@@ -11,8 +10,6 @@ import traceback  # Import traceback for detailed error logs
 
 app = Flask(__name__)
 app.secret_key = "supersecretkey"  # Needed for Flask session storage
-
-load_dotenv()  # This loads the variables from .env into os.environ
 
 # Store API Key in an environment variable
 GOOGLE_MAPS_API_KEY = "AIzaSyCWgzkgkRv-DJybUfGXrx7ZpmQ_kNPJmLk"
