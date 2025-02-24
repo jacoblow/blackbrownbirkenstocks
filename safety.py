@@ -5,6 +5,8 @@ import polyline
 import pandas as pd
 import numpy as np
 import folium
+import traceback  # Import traceback for detailed error logs
+
 
 app = Flask(__name__)
 app.secret_key = "supersecretkey"  # Needed for Flask session storage
@@ -241,89 +243,172 @@ def filter_crimes_by_route(crime_df, route_coordinates, lat_range=0.0002326, lng
 
 
 
+import traceback  # Import traceback for debugging
+
+def normalize_value(value, min_value, max_value):
+    """
+    Normalizes a value between 0 and 1 using min-max normalization.
+    """
+    return (value - min_value) / (max_value - min_value) if max_value > min_value else 0
+
 @app.route("/multiple_routes", methods=["GET", "POST"])
 def get_multiple_routes():
-    """
-    Fetches multiple alternative walking routes, evaluates risk based on crime data,
-    and returns them as JSON.
-    """
-    origin = request.args.get("origin")
-    destination = request.args.get("destination")
-
-    if not origin or not destination:
-        return jsonify({"error": "Missing origin or destination"}), 400
-
-    # Call Google Maps API to get routes
-    url = f"https://maps.googleapis.com/maps/api/directions/json?origin={origin}&destination={destination}&mode=walking&alternatives=true&key={GOOGLE_MAPS_API_KEY}"
-    
-    response = requests.get(url, timeout=10)
-    data = response.json()
-
-    if "error_message" in data:
-        return jsonify({"error": data["error_message"]}), 400
-
-    if not data.get("routes"):
-        return jsonify({"error": "No pedestrian routes found"}), 400
-
-    # Load crime dataset
     try:
-        crime_data = pd.read_csv("shortenedSFcrimedata2_modified.csv")
-    except FileNotFoundError:
-        return jsonify({"error": "Crime dataset not found"}), 500
+        origin = request.args.get("origin")
+        destination = request.args.get("destination")
 
-    all_routes = []
-    route_scores = []
+        if not origin or not destination:
+            return jsonify({"error": "Missing origin or destination"}), 400
 
-    for idx, route in enumerate(data["routes"]):
-        route_coordinates = []
+        # Call Google Maps API to get routes
+        url = f"https://maps.googleapis.com/maps/api/directions/json?origin={origin}&destination={destination}&mode=walking&alternatives=true&key={GOOGLE_MAPS_API_KEY}"
+        response = requests.get(url, timeout=10)
+        data = response.json()
 
-        for leg in route["legs"]:
-            for step in leg["steps"]:
-                step_polyline = step["polyline"]["points"]
-                step_points = polyline.decode(step_polyline)
+        if "error_message" in data:
+            return jsonify({"error": data["error_message"]}), 400
 
-                # Sample every 3rd point to reduce computation load
-                sampled_points = step_points[::3]
-                for lat, lng in sampled_points:
-                    route_coordinates.append((lat, lng))
+        if not data.get("routes"):
+            return jsonify({"error": "No pedestrian routes found"}), 400
 
-        # Filter crimes along this route
-        filtered_crimes = filter_crimes_by_route(crime_data, route_coordinates)
+        # Load crime dataset
+        try:
+            crime_data = pd.read_csv("shortenedSFcrimedata2_modified.csv")
+        except FileNotFoundError:
+            return jsonify({"error": "Crime dataset not found"}), 500
 
-        # Compute total risk score
-        total_risk_score = filtered_crimes["Exponential_Score"].sum() if not filtered_crimes.empty else 0
+        # Load power curve dataset
+        try: 
+            power_data = pd.read_csv("power_curved_values.csv")
+        except FileNotFoundError:
+            return jsonify({"error": "Power curve dataset not found"}), 500
 
-        # Store route details
-        all_routes.append({
-            "route_index": idx + 1,
-            "summary": route.get("summary", "No Summary"),
-            "distance": route["legs"][0]["distance"]["text"],
-            "duration": route["legs"][0]["duration"]["text"],
-            "coordinates": route_coordinates
-        })
+        # Debugging: Print power_data columns
+        print("Columns in power_data:", power_data.columns.tolist())
 
-        route_scores.append({
-            "route_index": idx + 1,
-            "total_risk_score": total_risk_score
-        })
+        all_routes = []
+        route_scores = []
+        min_crime_rate = float("inf")
+        max_crime_rate = float("-inf")
 
-    # Identify the safest route (route with the lowest risk score)
-    if route_scores:
-        safest_route_index = min(route_scores, key=lambda x: x["total_risk_score"])["route_index"]
-    else:
-        safest_route_index = None  # Handle case where no scores are available
+        for idx, route in enumerate(data["routes"]):
+            route_coordinates = []
 
-    # Store results in session
-    session["all_routes"] = all_routes
-    session["route_scores"] = route_scores
-    session["safest_route"] = safest_route_index  # Store safest route index
+            for leg in route["legs"]:
+                for step in leg["steps"]:
+                    step_polyline = step["polyline"]["points"]
+                    step_points = polyline.decode(step_polyline)
 
-    # Format response with is_safest flag
-    for route in all_routes:
-        route["is_safest"] = (route["route_index"] == safest_route_index)
-        route["risk_score"] = next((score["total_risk_score"] for score in route_scores if score["route_index"] == route["route_index"]), "N/A")
+                    sampled_points = step_points[::3]
+                    for lat, lng in sampled_points:
+                        route_coordinates.append((lat, lng))
 
-    return jsonify({"routes": all_routes})
+            # Filter crimes along this route
+            filtered_crimes = filter_crimes_by_route(crime_data, route_coordinates)
+
+            # Extract distance properly
+            distance_text = route["legs"][0]["distance"]["text"]
+            distance_numeric = float("".join(filter(str.isdigit, distance_text)))  
+            distance_units = "miles" if "mile" in distance_text.lower() else "km"
+
+            if distance_units == "km":
+                distance_numeric *= 0.621371  
+
+            # Compute crime rate
+            route_crime_rate = filtered_crimes["Exponential_Score"].sum() / distance_numeric if distance_numeric > 0 else 0
+            min_crime_rate = min(min_crime_rate, route_crime_rate)
+            max_crime_rate = max(max_crime_rate, route_crime_rate)
+
+        # Normalize route crime rates and compute risk scores
+        for idx, route in enumerate(data["routes"]):
+            route_coordinates = []
+
+            for leg in route["legs"]:
+                for step in leg["steps"]:
+                    step_polyline = step["polyline"]["points"]
+                    step_points = polyline.decode(step_polyline)
+
+                    sampled_points = step_points[::3]
+                    for lat, lng in sampled_points:
+                        route_coordinates.append((lat, lng))
+
+            filtered_crimes = filter_crimes_by_route(crime_data, route_coordinates)
+            distance_text = route["legs"][0]["distance"]["text"]
+            distance_numeric = float("".join(filter(str.isdigit, distance_text)))  
+            distance_units = "miles" if "mile" in distance_text.lower() else "km"
+
+            if distance_units == "km":
+                distance_numeric *= 0.621371  
+
+            route_crime_rate = filtered_crimes["Exponential_Score"].sum() / distance_numeric if distance_numeric > 0 else 0
+            norm_route_crime_rate = normalize_value(route_crime_rate, min_crime_rate, max_crime_rate)  
+
+            # District normalization
+            unique_districts = filtered_crimes["Police District"].dropna().unique()
+            norm_district_rate = 0
+
+            if "District" in power_data.columns:
+                for district in unique_districts:
+                    if district in power_data["District"].values:
+                        norm_district_rate += power_data.loc[power_data["District"] == district, "Score"].values[0]
+            else:
+                print("ERROR: 'District' column missing in power_data.csv")
+
+            norm_district_rate = np.log1p(norm_district_rate) / np.log1p(power_data["Score"].max())  # Normalize log-scaled
+            norm_total = (0.6 * norm_route_crime_rate) + (0.4 * norm_district_rate)  
+
+            # Scale final score to 1-10 range
+            total_risk_score = 10 - (9 * norm_total)  
+            total_risk_score = max(1, min(10, total_risk_score))  
+
+            # Update power_data with the latest district scores
+            for district in unique_districts:
+                if district in power_data["District"].values:
+                    power_data.loc[power_data["District"] == district, "Score"] = norm_district_rate
+                else:
+                    new_row = pd.DataFrame({"District": [district], "Score": [norm_district_rate]})
+                    power_data = pd.concat([power_data, new_row], ignore_index=True)
+
+            # Save the updated district crime scores back to the CSV
+            power_data.to_csv("power_curved_values.csv", index=False)
+            print("Updated power data written back to CSV.")
+
+            all_routes.append({
+                "route_index": idx + 1,
+                "summary": route.get("summary", "No Summary"),
+                "distance": f"{distance_numeric:.2f} miles",
+                "duration": route["legs"][0]["duration"]["text"],
+                "coordinates": route_coordinates
+            })
+
+            route_scores.append({
+                "route_index": idx + 1,
+                "total_risk_score": total_risk_score
+            })
+
+        # Determine safest route
+        if route_scores:
+            safest_route_index = max(route_scores, key=lambda x: x["total_risk_score"])["route_index"]
+        else:
+            safest_route_index = None
+
+        # Store results in session
+        session["all_routes"] = all_routes
+        session["route_scores"] = route_scores
+        session["safest_route"] = safest_route_index
+
+        for route in all_routes:
+            route["is_safest"] = (route["route_index"] == safest_route_index)
+            route["risk_score"] = next((score["total_risk_score"] for score in route_scores if score["route_index"] == route["route_index"]), "N/A")
+
+        return jsonify({"routes": all_routes})
+
+    except Exception as e:
+        print("ERROR: ", str(e))
+        print(traceback.format_exc())  
+        return jsonify({"error": "Internal Server Error"}), 500
+
+
 
 
 if __name__ == "__main__":
