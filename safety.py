@@ -15,7 +15,7 @@ app.secret_key = "supersecretkey"  # Needed for Flask session storage
 load_dotenv()  # This loads the variables from .env into os.environ
 
 # Store API Key in an environment variable
-GOOGLE_MAPS_API_KEY = os.environ.get("api_key")
+GOOGLE_MAPS_API_KEY = "AIzaSyCWgzkgkRv-DJybUfGXrx7ZpmQ_kNPJmLk"
 
 
 @app.route("/")
