@@ -128,7 +128,12 @@ def safety_map():
         # Ensure all fields exist and are non-null
         crime_type = row["Incident Category"] if pd.notna(row["Incident Category"]) else "Unknown Crime"
         crime_desc = row["Incident Description"] if pd.notna(row["Incident Description"]) else "No Description"
-        crime_time = row["Incident Datetime"].strftime("%Y-%m-%d %H:%M:%S") if pd.notna(row["Incident Datetime"]) else "Unknown Time"
+        crime_time = "Unknown Time"
+        if "Incident Datetime" in row and pd.notna(row["Incident Datetime"]):
+            try:
+                crime_time = pd.to_datetime(row["Incident Datetime"]).strftime("%Y-%m-%d %H:%M:%S")
+            except Exception as e:
+                print(f"Error parsing datetime: {e}")
 
         # Tooltip: Show both Time & Description on hover
         tooltip_text = f"{crime_desc} | {crime_time}"
@@ -310,7 +315,6 @@ def get_multiple_routes():
         min_severity = min(crime_severities) if crime_severities else 0
         max_severity = max(crime_severities) if crime_severities else 1  # Avoid division by zero
 
-        # Avoid extreme scores (1 and 10) by narrowing the range
         min_bound = 3  # Instead of 1, start from 3
         max_bound = 8  # Instead of 10, cap at 8 for better spread
 
@@ -352,12 +356,17 @@ def get_multiple_routes():
             top_crimes = filtered_crimes.nlargest(5, "Exponential_Score")
             crime_list = []
             for _, row in top_crimes.iterrows():
+                crime_date = "Unknown Date"
+                if "Incident Date" in row and pd.notna(row["Incident Date"]):
+                    crime_date = str(row["Incident Date"])  # Convert directly to string
+
                 crime_list.append({
                     "latitude": row["Latitude"],
                     "longitude": row["Longitude"],
                     "category": row["Incident Category"],
                     "description": row["Incident Description"],
-                    "score": row["Exponential_Score"]
+                    "score": row["Exponential_Score"],
+                    "time": crime_date  # Now using 'Incident Date'
                 })
 
             all_crimes.extend(crime_list)  # Collect all crimes along the routes

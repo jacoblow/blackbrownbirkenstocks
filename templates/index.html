@@ -138,8 +138,6 @@
                     addMarker(place.geometry.location, "destination");
                 }
             });
-
-            fetchRoutes();
         }
 
         function addMarker(location, type) {
@@ -158,75 +156,48 @@
         }
 
         function getRoutes() {
-    let origin = document.getElementById("origin").value;
-    let destination = document.getElementById("destination").value;
+            let origin = document.getElementById("origin").value;
+            let destination = document.getElementById("destination").value;
 
-    if (!origin || !destination) {
-        alert("Please enter both origin and destination.");
-        return;
-    }
-
-    clearPolylines();
-    clearCrimeMarkers();
-
-    fetch(`/multiple_routes?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}`)
-        .then(response => response.json())
-        .then(data => {
-            if (data.routes.length > 0) {
-                updateLegend(data.routes);
-
-                let safestRouteIndex = data.routes.findIndex(route => route.is_safest);
-
-                data.routes.forEach((route, index) => {
-                    let color = index === safestRouteIndex ? "green" : "red";  // Fix the color logic
-
-                    let polyline = new google.maps.Polyline({
-                        path: route.coordinates.map(coord => ({
-                            lat: coord[0],
-                            lng: coord[1]
-                        })),
-                        strokeColor: color,
-                        strokeWeight: index === safestRouteIndex ? 6 : 4,
-                        map: map
-                    });
-
-                    polylines.push(polyline);
-                });
-
-                if (data.crimes) {
-                    addCrimeMarkers(data.crimes);
-                }
-
-                let firstRouteStart = data.routes[0].coordinates[0];
-                map.setCenter({ lat: firstRouteStart[0], lng: firstRouteStart[1] });
-                map.setZoom(14);
+            if (!origin || !destination) {
+                alert("Please enter both origin and destination.");
+                return;
             }
-        })
-        .catch(error => console.error("Error fetching routes:", error));
-}
 
+            clearPolylines();
+            clearCrimeMarkers();
 
-        function fetchRoutes() {
-            fetch("/api/get_routes")
+            fetch(`/multiple_routes?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}`)
                 .then(response => response.json())
                 .then(data => {
                     if (data.routes.length > 0) {
-                        clearPolylines();
                         updateLegend(data.routes);
 
-                        data.routes.forEach(route => {
+                        let safestRouteIndex = data.routes.findIndex(route => route.is_safest);
+
+                        data.routes.forEach((route, index) => {
+                            let color = index === safestRouteIndex ? "green" : "red";  // Fix the color logic
+
                             let polyline = new google.maps.Polyline({
                                 path: route.coordinates.map(coord => ({
                                     lat: coord[0],
                                     lng: coord[1]
                                 })),
-                                strokeColor: route.is_safest ? "green" : "red",
-                                strokeWeight: 4,
+                                strokeColor: color,
+                                strokeWeight: index === safestRouteIndex ? 6 : 4,
                                 map: map
                             });
 
                             polylines.push(polyline);
                         });
+
+                        if (data.crimes) {
+                            addCrimeMarkers(data.crimes);
+                        }
+
+                        let firstRouteStart = data.routes[0].coordinates[0];
+                        map.setCenter({ lat: firstRouteStart[0], lng: firstRouteStart[1] });
+                        map.setZoom(14);
                     }
                 })
                 .catch(error => console.error("Error fetching routes:", error));
@@ -251,15 +222,22 @@
                         url: "http://maps.google.com/mapfiles/ms/icons/red-dot.png",
                         scaledSize: new google.maps.Size(30, 30)
                     },
-                    title: `🚨 ${crime.category}`,
+                    title: `🚨 ${crime.category}`
                 });
 
                 let infoWindow = new google.maps.InfoWindow({
-                    content: `<b>${crime.category}</b><br>${crime.description}<br>📍 ${crime.latitude}, ${crime.longitude}<br>⚠️ Score: ${crime.score}`,
+                    content: `<b>${crime.category}</b><br>
+                              <b>Description:</b> ${crime.description}<br>
+                              <b>Score:</b> ${crime.score}<br>
+                              <b>Time:</b> ${crime.time}`
                 });
 
-                crimeMarker.addListener("click", function () {
+                crimeMarker.addListener("mouseover", function () {
                     infoWindow.open(map, crimeMarker);
+                });
+
+                crimeMarker.addListener("mouseout", function () {
+                    infoWindow.close();
                 });
 
                 crimeMarkers.push(crimeMarker);
@@ -267,22 +245,21 @@
         }
 
         function updateLegend(routes) {
-    let legendContent = document.getElementById("legend-content");
-    legendContent.innerHTML = "";
+            let legendContent = document.getElementById("legend-content");
+            legendContent.innerHTML = "";
 
-    routes.forEach((route, index) => {
-        let color = route.is_safest ? "green" : "red";
-        let crimeScore = route.risk_score !== undefined ? route.risk_score.toFixed(2) : "N/A";
+            routes.forEach((route, index) => {
+                let color = route.is_safest ? "green" : "red";
+                let crimeScore = route.risk_score !== undefined ? route.risk_score.toFixed(2) : "N/A";
 
-        legendContent.innerHTML += `
-            <div class="legend-item">
-                <div class="legend-color" style="background: ${color}"></div>
-                Route ${index + 1}: ${crimeScore} ${route.is_safest ? "(Safest)" : ""}
-            </div>
-        `;
-    });
-}
-
+                legendContent.innerHTML += `
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: ${color}"></div>
+                        Route ${index + 1}: ${crimeScore} ${route.is_safest ? "(Safest)" : ""}
+                    </div>
+                `;
+            });
+        }
 
         window.onload = initMap;
     </script>
